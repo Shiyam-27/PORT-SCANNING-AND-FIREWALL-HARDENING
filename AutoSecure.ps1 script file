@@ -1,0 +1,45 @@
+
+# AutoSecure.ps1 - Automatically scan and block open ports using Nmap + Windows Firewall
+
+# Step 1: Run Nmap scan
+Write-Host "Running Nmap scan on localhost (127.0.0.1)...`n"
+Start-Process -FilePath "nmap.exe" -ArgumentList "-p- -T4 127.0.0.1 -oG scan_output.txt" -Wait
+
+# Step 2: Parse scan result
+Write-Host "Extracting open ports from scan result..."
+$scanLines = Get-Content "scan_output.txt"
+$openPorts = @()
+
+foreach ($line in $scanLines) {
+    if ($line -match "Ports:") {
+        $portList = ($line -split "Ports:")[1] -split ","
+        foreach ($portInfo in $portList) {
+            $portData = $portInfo.Trim()
+            if ($portData -match "/open/") {
+                $portNumber = ($portData -split "/")[0]
+                if (-not $openPorts.Contains($portNumber)) {
+                    $openPorts += $portNumber
+                }
+            }
+        }
+    }
+}
+
+# Step 3: Block open ports
+if ($openPorts.Count -eq 0) {
+    Write-Host "`nNo open ports found. System is secure."
+} else {
+    Write-Host "`nBlocking the following open ports:"
+    foreach ($port in $openPorts) {
+        Write-Host " - Port $port"
+        $ruleName = "AutoBlock_Port_$port"
+        New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -LocalPort $port -Protocol TCP -Action Block -Profile Any -EdgeTraversalPolicy Block -ErrorAction SilentlyContinue
+    }
+    Write-Host "`nAll detected open ports have been blocked."
+}
+
+# Step 4: Log blocked ports
+$timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+$logFile = "Blocked_Ports_$timestamp.txt"
+$openPorts | Out-File $logFile
+Write-Host "`nLog saved to: $logFile"
